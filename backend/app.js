@@ -1,3 +1,5 @@
+const path = require('path');
+const fs = require('fs');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -15,31 +17,66 @@ const notFound = require('./middleware/notFound');
 
 const app = express();
 
-// Security headers
-app.use(helmet());
+// Path to the built frontend (copied into backend/public during the Docker build)
+const publicPath = path.join(__dirname, 'public');
+const indexFile = path.join(publicPath, 'index.html');
+const hasFrontend = fs.existsSync(indexFile);
 
-// CORS — restrict to CLIENT_URL
-const allowedOrigins = [
-  process.env.CLIENT_URL || 'http://localhost:5173',
-  'http://localhost:5173',
-  'http://localhost:5174',https://leadflow-m26w.vercel.app/
-];
-
+// Security headers (CSP allows the bundled app + Google Fonts)
 app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+        fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
+        imgSrc: ["'self'", 'data:', 'https:'],
+        connectSrc: ["'self'"],
+        objectSrc: ["'none'"],
+      },
+    },
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  })
+);
+
+// CORS — same-origin requests (served SPA) plus explicit allowlist
+const allowedOrigins = [
+  process.env.CLIENT_URL,
+  process.env.APP_URL,
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://localhost:9999',
+  'https://leadflow-m26w.vercel.app',
+].filter(Boolean);
+
+const isSameOrigin = (origin, host) => {
+  if (!origin || !host) return false;
+  try {
+    return new URL(origin).host === host;
+  } catch (err) {
+    return false;
+  }
+};
+
+app.use((req, res, next) => {
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (mobile apps, curl, Postman)
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error(`CORS: origin ${origin} not allowed`));
+      if (
+        !origin ||
+        isSameOrigin(origin, req.headers.host) ||
+        allowedOrigins.includes(origin) ||
+        allowedOrigins.includes(origin.replace(/\/$/, ''))
+      ) {
+        return callback(null, true);
       }
+      return callback(new Error(`CORS: origin ${origin} not allowed`));
     },
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
-  })
-);
+  })(req, res, next);
+});
 
 // Rate limiting
 const limiter = rateLimit({
@@ -71,16 +108,12 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 }
 
-// Health check
-app.get('/', (req, res) => {
-  res.status(200).json({
-    success: true,
-    message: 'LeadFlow API is running',
-    health: '/health',
-    api: 'https://leadflow-m26w.vercel.app/',
-  });
-});
+// Static assets for the built SPA
+if (hasFrontend) {
+  app.use(express.static(publicPath, { index: false, maxAge: '1h' }));
+}
 
+// Health check
 app.get('/health', (req, res) => {
   res.status(200).json({
     success: true,
@@ -95,6 +128,23 @@ app.use('/api/v1/auth', authLimiter, authRoutes);
 app.use('/api/v1/leads', leadRoutes);
 app.use('/api/v1/activities', activityRoutes);
 app.use('/api/v1/dashboard', dashboardRoutes);
+
+// Root: SPA when a build is present, otherwise API info JSON
+app.get('/', (req, res, next) => {
+  if (hasFrontend) return res.sendFile(indexFile);
+  return res.status(200).json({
+    success: true,
+    message: 'LeadFlow API is running',
+    health: '/health',
+  });
+});
+
+// SPA fallback for client-side routes (never for API paths)
+app.get('*', (req, res, next) => {
+  if (!hasFrontend) return next();
+  if (req.path.startsWith('/api') || req.path === '/health') return next();
+  return res.sendFile(indexFile);
+});
 
 // 404 handler
 app.use(notFound);
