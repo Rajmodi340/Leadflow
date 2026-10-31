@@ -1,24 +1,35 @@
-require('dotenv').config();
+const config = require('./config/env');
 const app = require('./app');
-const connectDB = require('./config/db');
+const { connectDBWithRetry } = require('./config/db');
 
-const PORT = process.env.PORT || 5000;
+const PORT = config.PORT;
+const HOST = config.HOST;
 
 const startServer = async () => {
-  await connectDB();
-
-  const HOST = process.env.HOST || '0.0.0.0';
+  // Start listening first so the platform health check can reach the container
+  // even while the database connection is being established.
   const server = app.listen(PORT, HOST, () => {
-    console.log(`🚀 Server running on http://${HOST}:${PORT} [${process.env.NODE_ENV}]`);
+    console.log(`🚀 Server running on http://${HOST}:${PORT} [${config.NODE_ENV}]`);
     console.log(`📋 Health check: http://${HOST}:${PORT}/health`);
+    const envReport = {
+      PORT: Boolean(process.env.PORT),
+      NODE_ENV: Boolean(process.env.NODE_ENV),
+      MONGODB_URI: Boolean(config.MONGODB_URI),
+      JWT_SECRET: Boolean(config.JWT_SECRET),
+      JWT_EXPIRES_IN: Boolean(config.JWT_EXPIRES_IN),
+      CLIENT_URL: Boolean(config.CLIENT_URL),
+    };
+    console.log(`🔧 Environment variables present: ${JSON.stringify(envReport)}`);
+  });
+
+  // Connect to MongoDB in the background (retries instead of exiting).
+  connectDBWithRetry().catch((err) => {
+    console.error(`❌ MongoDB bootstrap error: ${err.message}`);
   });
 
   // Graceful shutdown
   process.on('unhandledRejection', (err) => {
     console.error(`❌ Unhandled Rejection: ${err.message}`);
-    server.close(() => {
-      process.exit(1);
-    });
   });
 
   process.on('SIGTERM', () => {

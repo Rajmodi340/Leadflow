@@ -115,11 +115,15 @@ if (hasFrontend) {
 
 // Health check
 app.get('/health', (req, res) => {
+  const mongoose = require('mongoose');
+  const dbStates = ['disconnected', 'connected', 'connecting', 'disconnecting'];
+  const dbState = dbStates[mongoose.connection.readyState] || 'unknown';
   res.status(200).json({
     success: true,
     message: 'LeadFlow API is running',
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV,
+    database: dbState,
   });
 });
 
