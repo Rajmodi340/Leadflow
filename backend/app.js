@@ -72,6 +72,15 @@ if (process.env.NODE_ENV === 'development') {
 }
 
 // Health check
+app.get('/', (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: 'LeadFlow API is running',
+    health: '/health',
+    api: '/api/v1',
+  });
+});
+
 app.get('/health', (req, res) => {
   res.status(200).json({
     success: true,
