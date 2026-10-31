@@ -22,7 +22,7 @@ app.use(helmet());
 const allowedOrigins = [
   process.env.CLIENT_URL || 'http://localhost:5173',
   'http://localhost:5173',
-  'http://localhost:5174',
+  'http://localhost:5174',https://leadflow-m26w.vercel.app/
 ];
 
 app.use(
