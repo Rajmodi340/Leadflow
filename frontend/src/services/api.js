@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 const api = axios.create({
-  baseURL: '/api/v1',
+  baseURL: 'https://leadflow-4zg1.vercel.app/',
   withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
