@@ -77,7 +77,7 @@ app.get('/', (req, res) => {
     success: true,
     message: 'LeadFlow API is running',
     health: '/health',
-    api: '/api/v1',
+    api: 'https://leadflow-m26w.vercel.app/',
   });
 });
 
